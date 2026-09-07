@@ -109,7 +109,7 @@ impl StoryParser<'_, '_> {
         let mut records: Vec<FieldRecord> = Vec::new();
         let mut open_fields: Vec<OpenField> = Vec::new();
 
-        for child in parent.child_elements() {
+        for child in transparent_children(parent) {
             let recognized = matches!(
                 child.local_name(),
                 "p" | "tbl" | "sdt" | "oMath" | "oMathPara"
@@ -413,6 +413,24 @@ impl StoryParser<'_, '_> {
             });
         }
         Ok(())
+    }
+}
+
+/// `parent`'s children in document order, descending through `w:customXml`
+/// and `w:smartTag` wrappers.
+pub(crate) fn transparent_children(parent: &XmlElement) -> Vec<&XmlElement> {
+    let mut children = Vec::new();
+    collect_transparent_children(parent, &mut children);
+    children
+}
+
+fn collect_transparent_children<'a>(parent: &'a XmlElement, children: &mut Vec<&'a XmlElement>) {
+    for child in parent.child_elements() {
+        if child.matches_name("w", "customXml") || child.matches_name("w", "smartTag") {
+            collect_transparent_children(child, children);
+        } else {
+            children.push(child);
+        }
     }
 }
 
@@ -868,6 +886,36 @@ mod tests {
                 .len(),
             3
         );
+    }
+
+    #[test]
+    fn body_and_cell_level_custom_xml_wrappers_are_transparent() {
+        let blocks = parse(
+            r#"<w:body xmlns:w="w">
+              <w:customXml w:uri="urn:x" w:element="section">
+                <w:customXmlPr><w:placeholder w:val="p"/></w:customXmlPr>
+                <w:p><w:r><w:t>wrapped</w:t></w:r></w:p>
+                <w:tbl><w:tr><w:tc>
+                  <w:customXml w:element="cell"><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:customXml>
+                </w:tc></w:tr></w:tbl>
+              </w:customXml>
+            </w:body>"#,
+        );
+        assert_eq!(blocks.len(), 2);
+        let BlockContent::Paragraph(paragraph) = &blocks[0] else {
+            panic!("paragraph")
+        };
+        let ParagraphContent::Inline(InlineNode::Run(run)) = &paragraph.content[0] else {
+            panic!("run")
+        };
+        assert!(matches!(
+            &run.content[0],
+            RunContent::Text { text, .. } if text == "wrapped"
+        ));
+        let BlockContent::Table(table) = &blocks[1] else {
+            panic!("table")
+        };
+        assert_eq!(crate::table::get_table_text(table), "cell");
     }
 
     #[test]
