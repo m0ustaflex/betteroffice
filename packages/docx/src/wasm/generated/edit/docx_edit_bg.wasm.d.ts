@@ -78,6 +78,7 @@ export const editsession_resolve_encoded_selection: (a: number, b: number, c: nu
 export const editsession_resolve_sticky_position: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
 export const editsession_retained_kernel_inputs_json: (a: number) => [number, number, number, number];
 export const editsession_seed_from_docx: (a: number, b: number, c: number) => [number, number, number, number];
+export const editsession_select_story: (a: number, b: number, c: number) => void;
 export const editsession_selection: (a: number) => [number, number, number, number];
 export const editsession_selection_context: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
 export const editsession_set_cell_borders: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];

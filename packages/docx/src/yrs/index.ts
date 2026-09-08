@@ -1047,10 +1047,12 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
         }
       : null;
 
-  const ensureUndo = (): void => {
-    if (undoTracked) return;
-    session.track_undo();
-    undoTracked = true;
+  const ensureUndo = (targetStory?: string): void => {
+    if (!undoTracked) {
+      session.track_undo();
+      undoTracked = true;
+    }
+    if (targetStory !== undefined) session.select_story(targetStory);
   };
 
   const ensureObserver = () => {
@@ -1320,7 +1322,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       ),
     deleteStory: (storyId) => mutate(() => session.delete_story(storyId)),
     insertTable: (at, rows, columns, suggesting) => {
-      ensureUndo();
+      ensureUndo(at.story);
       return mutate(
         () =>
           JSON.parse(
@@ -1337,7 +1339,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     insertRow: (at, side, suggesting) => {
-      ensureUndo();
+      ensureUndo(at.story);
       return mutate(
         () =>
           JSON.parse(
@@ -1351,14 +1353,14 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     insertColumn: (at, side) => {
-      ensureUndo();
+      ensureUndo(at.story);
       return mutate(
         () =>
           JSON.parse(session.insert_column(JSON.stringify(at), side === 'right')) as YrsTableReceipt
       );
     },
     deleteRow: (range, suggesting) => {
-      ensureUndo();
+      ensureUndo(range.anchor.story);
       return mutate(
         () =>
           JSON.parse(
@@ -1367,31 +1369,31 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     deleteColumn: (range) => {
-      ensureUndo();
+      ensureUndo(range.anchor.story);
       return mutate(
         () => JSON.parse(session.delete_column(JSON.stringify(range))) as YrsTableReceipt
       );
     },
     deleteTable: (table) => {
-      ensureUndo();
+      ensureUndo(table.story);
       return mutate(
         () => JSON.parse(session.delete_table(JSON.stringify(table))) as YrsTableReceipt
       );
     },
     mergeCells: (range) => {
-      ensureUndo();
+      ensureUndo(range.anchor.story);
       return mutate(
         () => JSON.parse(session.merge_cells(JSON.stringify(range))) as YrsTableReceipt
       );
     },
     splitCell: (at, rows, columns) => {
-      ensureUndo();
+      ensureUndo(at.story);
       return mutate(
         () => JSON.parse(session.split_cell(JSON.stringify(at), rows, columns)) as YrsTableReceipt
       );
     },
     setCellShading: (range, color) => {
-      ensureUndo();
+      ensureUndo(range.anchor.story);
       return mutate(
         () =>
           JSON.parse(
@@ -1400,7 +1402,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     setCellTextFormat: (range, patch) => {
-      ensureUndo();
+      ensureUndo(range.anchor.story);
       return mutate(
         () =>
           JSON.parse(
@@ -1409,7 +1411,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     setCellBorders: (range, borders) => {
-      ensureUndo();
+      ensureUndo(range.anchor.story);
       return mutate(
         () =>
           JSON.parse(
@@ -1418,21 +1420,21 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     setColumnWidth: (at, widthTwips) => {
-      ensureUndo();
+      ensureUndo(at.story);
       return mutate(
         () =>
           JSON.parse(session.set_column_width(JSON.stringify(at), widthTwips)) as YrsTableReceipt
       );
     },
     setTableWidth: (table, widthTwips) => {
-      ensureUndo();
+      ensureUndo(table.story);
       return mutate(
         () =>
           JSON.parse(session.set_table_width(JSON.stringify(table), widthTwips)) as YrsTableReceipt
       );
     },
     insertText: (at, text, suggesting) => {
-      ensureUndo();
+      ensureUndo(at.story);
       return mutate(
         () =>
           JSON.parse(
@@ -1448,7 +1450,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     deleteRange: (range, suggesting) => {
-      ensureUndo();
+      ensureUndo(range.story);
       return mutate(
         () =>
           JSON.parse(
@@ -1465,7 +1467,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     replaceRange: (range, text, suggesting) => {
-      ensureUndo();
+      ensureUndo(range.story);
       return mutate(
         () =>
           JSON.parse(
@@ -1483,7 +1485,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     splitParagraph: (at, suggesting) => {
-      ensureUndo();
+      ensureUndo(at.story);
       return mutate(
         () =>
           JSON.parse(
@@ -1498,7 +1500,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     mergeParagraphs: (story, paraId, suggesting) => {
-      ensureUndo();
+      ensureUndo(story);
       return mutate(
         () =>
           JSON.parse(
@@ -1507,7 +1509,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     toggleMark: (range, mark) => {
-      ensureUndo();
+      ensureUndo(range.story);
       mutate(() =>
         session.toggle_mark(
           range.story,
@@ -1520,7 +1522,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     formatRange: (range, delta) => {
-      ensureUndo();
+      ensureUndo(range.story);
       mutate(() =>
         session.format_range(
           range.story,
@@ -1533,7 +1535,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     setHyperlink: (range, hyperlink) => {
-      ensureUndo();
+      ensureUndo(range.story);
       mutate(() =>
         session.set_hyperlink(
           range.story,
@@ -1546,7 +1548,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     clearFormatting: (range) => {
-      ensureUndo();
+      ensureUndo(range.story);
       mutate(() =>
         session.clear_formatting(
           range.story,
@@ -1558,7 +1560,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     applyParagraphStyle: (range, styleId, suggesting) => {
-      ensureUndo();
+      ensureUndo(range.story);
       mutate(() =>
         session.apply_paragraph_style(
           range.story,
@@ -1573,7 +1575,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     setParagraphAttrs: (range, attrs, suggesting) => {
-      ensureUndo();
+      ensureUndo(range.story);
       mutate(() =>
         session.set_paragraph_attrs(
           range.story,
@@ -1588,7 +1590,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       );
     },
     insertImage: (at, image, suggesting) => {
-      ensureUndo();
+      ensureUndo(at.story);
       return mutate(
         () =>
           JSON.parse(
@@ -1608,7 +1610,7 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       mutate(() => session.set_content_control_value(embedId, JSON.stringify(value)));
     },
     setContentControlValueAt: (at, value) => {
-      ensureUndo();
+      ensureUndo(at.story);
       mutate(() =>
         session.set_content_control_value_at(at.story, at.paraId, at.offset, JSON.stringify(value))
       );
@@ -1622,15 +1624,15 @@ function wrapSession(session: EditSession, clientId: number): YrsSession {
       mutate(() => session.set_image_geometry(embedId, JSON.stringify(geometry)));
     },
     insertPageBreak: (at) => {
-      ensureUndo();
+      ensureUndo(at.story);
       mutate(() => session.insert_page_break(at.story, at.paraId, at.offset));
     },
     insertSectionBreak: (at, type) => {
-      ensureUndo();
+      ensureUndo(at.story);
       mutate(() => session.insert_section_break(at.story, at.paraId, at.offset, type));
     },
     insertWatermark: (at, watermark) => {
-      ensureUndo();
+      ensureUndo(at.story);
       mutate(() =>
         session.insert_watermark(at.story, at.paraId, at.offset, JSON.stringify(watermark))
       );

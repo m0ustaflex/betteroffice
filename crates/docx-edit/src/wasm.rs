@@ -1924,6 +1924,18 @@ impl EditSession {
         self.undo.track(self.engine.doc());
     }
 
+    /// Notes the story a direct operation is about to edit; a different story
+    /// than the previous edit or caret closes the current undo step.
+    pub fn select_story(&self, story: &str) {
+        self.undo.select_story(story);
+    }
+
+    fn select_embed_story(&self, embed_id: &str) -> Result<(), JsValue> {
+        let story = self.engine.doc().embed_story(embed_id).map_err(js_err)?;
+        self.undo.select_story(&story);
+        Ok(())
+    }
+
     /// Reverts the latest local-origin step and reports whether anything was
     /// reverted. Remote and system transactions are excluded by the manager's
     /// tracked-origin policy; `false` before tracking starts.
@@ -2820,6 +2832,7 @@ impl EditSession {
         value_json: &str,
     ) -> Result<(), JsValue> {
         let value = Any::from_json(value_json).map_err(js_err)?;
+        self.select_embed_story(embed_id)?;
         let ctx = EditCtx::local(String::new(), String::new());
         self.engine
             .doc()
@@ -2858,6 +2871,7 @@ impl EditSession {
     /// `embed_id`, leaving the control itself in place. Errors when no embed
     /// has that id.
     pub fn clear_content_control_value(&self, embed_id: &str) -> Result<(), JsValue> {
+        self.select_embed_story(embed_id)?;
         let ctx = EditCtx::local(String::new(), String::new());
         self.engine
             .doc()
@@ -2890,6 +2904,7 @@ impl EditSession {
                 entries.push((key.clone(), json_to_any(value)?));
             }
         }
+        self.select_embed_story(embed_id)?;
         let ctx = EditCtx::local(String::new(), String::new());
         self.engine
             .doc()

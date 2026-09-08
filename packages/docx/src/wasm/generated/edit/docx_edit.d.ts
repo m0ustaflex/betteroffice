@@ -578,6 +578,11 @@ export class EditSession {
      */
     seed_from_docx(bytes: Uint8Array): string;
     /**
+     * Notes the story a direct operation is about to edit; a different story
+     * than the previous edit or caret closes the current undo step.
+     */
+    select_story(story: string): void;
+    /**
      * This peer's current selection as `{"anchor":{"story","paraId","offset"},
      * "head":{…}}`, or `"null"` before [`EditSession::set_selection`] is
      * called. Errors when an endpoint no longer resolves.
@@ -1093,6 +1098,7 @@ export interface InitOutput {
     readonly editsession_resolve_sticky_position: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly editsession_retained_kernel_inputs_json: (a: number) => [number, number, number, number];
     readonly editsession_seed_from_docx: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly editsession_select_story: (a: number, b: number, c: number) => void;
     readonly editsession_selection: (a: number) => [number, number, number, number];
     readonly editsession_selection_context: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
     readonly editsession_set_cell_borders: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];

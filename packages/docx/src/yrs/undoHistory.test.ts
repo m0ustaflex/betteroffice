@@ -43,6 +43,23 @@ describe('session undo history', () => {
     }
   });
 
+  it('starts a new step when a direct operation targets another story', async () => {
+    const session = await createYrsSession({ clientId: 53007 });
+    try {
+      session.createStory('body', 'body');
+      session.createStory('fn:2', 'note');
+      session.insertText(endOf(session, 'body'), '!');
+      session.insertText(endOf(session, 'fn:2'), '?');
+
+      expect(session.undo()).toBe(true);
+      expect(session.historyStories()).toEqual(['fn:2']);
+      expect(text(session, 'body')).toBe('body!');
+      expect(text(session, 'fn:2')).toBe('note');
+    } finally {
+      session.destroy();
+    }
+  });
+
   it('groups keystrokes inside the capture window into one step', async () => {
     const session = await createYrsSession({ clientId: 53006 });
     try {
