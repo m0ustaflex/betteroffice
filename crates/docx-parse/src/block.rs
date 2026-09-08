@@ -319,8 +319,8 @@ impl StoryParser<'_, '_> {
             return Ok(());
         }
         let mut run_index = 0usize;
-        for run in source
-            .child_elements()
+        for run in transparent_children(source, false)
+            .into_iter()
             .filter(|child| child.local_name() == "r")
         {
             for child in run.child_elements() {
@@ -860,6 +860,36 @@ mod tests {
             content[1]["rows"][0]["cells"][0]["content"][0]["type"],
             "paragraph"
         );
+    }
+
+    #[test]
+    fn text_boxes_inside_wrapped_runs_are_enriched() {
+        let blocks = parse(
+            r#"<w:body xmlns:w="w" xmlns:wp="wp" xmlns:a="a" xmlns:wps="wps"><w:p>
+              <w:r><w:t>lead</w:t></w:r>
+              <w:smartTag w:element="place"><w:r><w:drawing>
+                <wp:inline><wp:extent cx="914400" cy="457200"/><a:graphic><a:graphicData><wps:wsp>
+                  <wps:txbx><w:txbxContent><w:p><w:r><w:t>boxed</w:t></w:r></w:p></w:txbxContent></wps:txbx>
+                </wps:wsp></a:graphicData></a:graphic></wp:inline>
+              </w:drawing></w:r></w:smartTag>
+            </w:p></w:body>"#,
+        );
+        let BlockContent::Paragraph(paragraph) = &blocks[0] else {
+            panic!("paragraph")
+        };
+        let ParagraphContent::Inline(InlineNode::Run(run)) = &paragraph.content[1] else {
+            panic!("wrapped run")
+        };
+        let shape = run
+            .content
+            .iter()
+            .find_map(|content| match content {
+                RunContent::Shape { shape } => Some(shape.as_ref()),
+                _ => None,
+            })
+            .expect("text box shape");
+        let content = &shape.text_body.as_ref().expect("text body").content;
+        assert_eq!(content[0]["content"][0]["content"][0]["text"], "boxed");
     }
 
     #[test]
