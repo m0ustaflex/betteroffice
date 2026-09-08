@@ -109,7 +109,7 @@ impl StoryParser<'_, '_> {
         let mut records: Vec<FieldRecord> = Vec::new();
         let mut open_fields: Vec<OpenField> = Vec::new();
 
-        for child in transparent_children(parent) {
+        for child in transparent_children(parent, false) {
             let recognized = matches!(
                 child.local_name(),
                 "p" | "tbl" | "sdt" | "oMath" | "oMathPara"
@@ -245,7 +245,10 @@ impl StoryParser<'_, '_> {
             column_widths: parse_table_grid(element.child("w", "tblGrid")),
             rows: Vec::new(),
         };
-        for row in element.children_named("w", "tr") {
+        for row in transparent_children(element, true)
+            .into_iter()
+            .filter(|row| row.matches_name("w", "tr"))
+        {
             self.budget.charge_table_row(self.part)?;
             table
                 .rows
@@ -270,7 +273,10 @@ impl StoryParser<'_, '_> {
             formatting,
             cells: Vec::new(),
         };
-        for cell in element.children_named("w", "tc") {
+        for cell in transparent_children(element, true)
+            .into_iter()
+            .filter(|cell| cell.matches_name("w", "tc"))
+        {
             self.budget.charge_table_cell(self.part)?;
             row.cells
                 .push(self.parse_table_cell(cell, depth, in_header_footer)?);
@@ -417,17 +423,25 @@ impl StoryParser<'_, '_> {
 }
 
 /// `parent`'s children in document order, descending through `w:customXml`
-/// and `w:smartTag` wrappers.
-pub(crate) fn transparent_children(parent: &XmlElement) -> Vec<&XmlElement> {
+/// and `w:smartTag` wrappers, and through `w:sdt`/`w:sdtContent` when `through_sdt`.
+pub(crate) fn transparent_children(parent: &XmlElement, through_sdt: bool) -> Vec<&XmlElement> {
     let mut children = Vec::new();
-    collect_transparent_children(parent, &mut children);
+    collect_transparent_children(parent, through_sdt, &mut children);
     children
 }
 
-fn collect_transparent_children<'a>(parent: &'a XmlElement, children: &mut Vec<&'a XmlElement>) {
+fn collect_transparent_children<'a>(
+    parent: &'a XmlElement,
+    through_sdt: bool,
+    children: &mut Vec<&'a XmlElement>,
+) {
     for child in parent.child_elements() {
         if child.matches_name("w", "customXml") || child.matches_name("w", "smartTag") {
-            collect_transparent_children(child, children);
+            collect_transparent_children(child, through_sdt, children);
+        } else if through_sdt && child.matches_name("w", "sdt") {
+            if let Some(content) = child.child("w", "sdtContent") {
+                collect_transparent_children(content, through_sdt, children);
+            }
         } else {
             children.push(child);
         }
@@ -916,6 +930,28 @@ mod tests {
             panic!("table")
         };
         assert_eq!(crate::table::get_table_text(table), "cell");
+    }
+
+    #[test]
+    fn sdt_and_custom_xml_wrapped_rows_and_cells_are_flattened() {
+        let blocks = parse(
+            r#"<w:body xmlns:w="w"><w:tbl>
+              <w:sdt><w:sdtPr><w:alias w:val="row"/></w:sdtPr><w:sdtContent>
+                <w:tr>
+                  <w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>
+                  <w:sdt><w:sdtContent><w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:sdtContent></w:sdt>
+                  <w:customXml w:element="cell"><w:tc><w:p><w:r><w:t>c</w:t></w:r></w:p></w:tc></w:customXml>
+                </w:tr>
+              </w:sdtContent></w:sdt>
+              <w:customXml w:element="row"><w:tr><w:tc><w:p><w:r><w:t>d</w:t></w:r></w:p></w:tc></w:tr></w:customXml>
+            </w:tbl></w:body>"#,
+        );
+        let BlockContent::Table(table) = &blocks[0] else {
+            panic!("table")
+        };
+        assert_eq!(table.rows.len(), 2);
+        assert_eq!(table.rows[0].cells.len(), 3);
+        assert_eq!(crate::table::get_table_text(table), "a\tb\tc\nd");
     }
 
     #[test]

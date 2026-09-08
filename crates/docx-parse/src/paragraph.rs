@@ -443,7 +443,7 @@ fn parse_paragraph_contents(
     };
     let mut output = Vec::new();
     let mut fields: Vec<OpenComplexField> = Vec::new();
-    for child in transparent_children(element) {
+    for child in transparent_children(element, false) {
         match child.local_name() {
             "r" => {
                 let normalized;
