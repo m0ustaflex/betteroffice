@@ -222,8 +222,6 @@ fn block_texts(parts: &Parts) -> Vec<String> {
         .collect()
 }
 
-/// Word wraps ordinary content in `w:smartTag`, `w:customXml` and row/cell
-/// `w:sdt` containers; a save may drop the wrappers but never their content.
 #[test]
 fn transparent_wrappers_lose_only_themselves_on_the_round_trip() {
     let original = with_document_xml(&sample_docx(), |xml| {
