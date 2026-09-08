@@ -331,6 +331,10 @@ export class EditSession {
      */
     format_range(story: string, start_para: string, start_offset: number, end_para: string, end_offset: number, delta_json: string): void;
     /**
+     * Stories changed by the latest undo or redo, sorted.
+     */
+    history_stories(): string[];
+    /**
      * Inserts a column left (`after = false`) or right (`after = true`) of
      * the cell `at_json` ([`CellLoc`]) names. Always a plain local edit.
      */
@@ -516,10 +520,6 @@ export class EditSession {
      * anything was reapplied.
      */
     redo(): boolean;
-    /**
-     * Current local redo stack size. Zero before a story starts tracking.
-     */
-    redo_depth(): number;
     /**
      * Registers raw sfnt bytes in this session's resident measurement store
      * and returns the font id that measurement and display inputs reference.
@@ -789,32 +789,17 @@ export class EditSession {
      */
     toggle_mark(story: string, start_para: string, start_offset: number, end_para: string, end_offset: number, mark_json: string): void;
     /**
-     * Starts local undo tracking for a structural table edit in `story`.
-     * Besides the parent story, which owns the table embed, this widens the
-     * scope to the stories root so undo and redo also remove and restore the
-     * cell stories the edit created or destroyed. Tracked separately from
-     * [`EditSession::track_undo`] on the same story, so switching between
-     * them starts a fresh history. Errors on an unknown story.
+     * Starts local-origin undo tracking across every story. Call this after
+     * import or seeding but before the first edit, so the initial document is
+     * not an undo step; later calls keep the history.
      */
-    track_table_undo(story: string): void;
+    track_undo(): void;
     /**
-     * Starts local-origin undo tracking for one story, replacing any scope
-     * already tracked (and its history). Call this after import or seeding but
-     * before the first edit, so the initial document is not an undo step.
-     * Re-tracking the same story is a no-op that preserves the history.
-     * Errors on an unknown story.
-     */
-    track_undo(story: string): void;
-    /**
-     * Reverts the latest local-origin transaction and reports whether
-     * anything was reverted. Remote and system transactions are excluded by
-     * the manager's tracked-origin policy; `false` before a story is tracked.
+     * Reverts the latest local-origin step and reports whether anything was
+     * reverted. Remote and system transactions are excluded by the manager's
+     * tracked-origin policy; `false` before tracking starts.
      */
     undo(): boolean;
-    /**
-     * Current local undo stack size. Zero before a story starts tracking.
-     */
-    undo_depth(): number;
     /**
      * Lowers one story to a `LayoutBlock[]` JSON array — the block, run and
      * table vocabulary the layout engine consumes. `env_json` supplies the
@@ -1073,6 +1058,7 @@ export interface InitOutput {
     readonly editsession_encode_sticky_position: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly editsession_encoded_selection: (a: number) => [number, number, number, number];
     readonly editsession_format_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number];
+    readonly editsession_history_stories: (a: number) => [number, number];
     readonly editsession_insert_column: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly editsession_insert_image: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number, number];
     readonly editsession_insert_page_break: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
@@ -1098,7 +1084,6 @@ export interface InitOutput {
     readonly editsession_paragraph_spans: (a: number, b: number, c: number) => [number, number, number, number];
     readonly editsession_paragraphs: (a: number, b: number, c: number) => [number, number, number, number];
     readonly editsession_redo: (a: number) => number;
-    readonly editsession_redo_depth: (a: number) => number;
     readonly editsession_register_measure_font: (a: number, b: number, c: number) => [number, number, number];
     readonly editsession_reject_change: (a: number, b: number, c: number) => [number, number, number, number];
     readonly editsession_replace_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number) => [number, number, number, number];
@@ -1132,10 +1117,8 @@ export interface InitOutput {
     readonly editsession_story_len: (a: number, b: number, c: number) => [number, number, number];
     readonly editsession_story_segments: (a: number, b: number, c: number) => [number, number, number, number];
     readonly editsession_toggle_mark: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number];
-    readonly editsession_track_table_undo: (a: number, b: number, c: number) => [number, number];
-    readonly editsession_track_undo: (a: number, b: number, c: number) => [number, number];
+    readonly editsession_track_undo: (a: number) => void;
     readonly editsession_undo: (a: number) => number;
-    readonly editsession_undo_depth: (a: number) => number;
     readonly editsession_yrs_blocks_for_story: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly editsession_load: (a: number, b: number, c: number) => [number, number];
     readonly parse_docx_relationships: (a: number, b: number) => [number, number, number, number];
