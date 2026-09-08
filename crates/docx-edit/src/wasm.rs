@@ -39,6 +39,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use js_sys::{Function, Uint8Array};
 use serde::Serialize;
@@ -1178,7 +1179,7 @@ impl EditSession {
             docx_source: RefCell::new(None),
             update_observer: None,
             update_event_observer: None,
-            undo: UndoSession::new(),
+            undo: UndoSession::with_clock(Arc::new(|| js_sys::Date::now() as u64)),
             selection: RefCell::new(None),
             cell_selection: RefCell::new(None),
             last_apply_profile_json: RefCell::new("{}".to_owned()),
@@ -1916,30 +1917,16 @@ impl EditSession {
 
     // -- local input state (undo + awareness selection) --
 
-    /// Starts local-origin undo tracking for one story, replacing any scope
-    /// already tracked (and its history). Call this after import or seeding but
-    /// before the first edit, so the initial document is not an undo step.
-    /// Re-tracking the same story is a no-op that preserves the history.
-    /// Errors on an unknown story.
-    pub fn track_undo(&self, story: &str) -> Result<(), JsValue> {
-        self.undo.track(self.engine.doc(), story).map_err(js_err)
+    /// Starts local-origin undo tracking across every story. Call this after
+    /// import or seeding but before the first edit, so the initial document is
+    /// not an undo step; later calls keep the history.
+    pub fn track_undo(&self) {
+        self.undo.track(self.engine.doc());
     }
 
-    /// Starts local undo tracking for a structural table edit in `story`.
-    /// Besides the parent story, which owns the table embed, this widens the
-    /// scope to the stories root so undo and redo also remove and restore the
-    /// cell stories the edit created or destroyed. Tracked separately from
-    /// [`EditSession::track_undo`] on the same story, so switching between
-    /// them starts a fresh history. Errors on an unknown story.
-    pub fn track_table_undo(&self, story: &str) -> Result<(), JsValue> {
-        self.undo
-            .track_table(self.engine.doc(), story)
-            .map_err(js_err)
-    }
-
-    /// Reverts the latest local-origin transaction and reports whether
-    /// anything was reverted. Remote and system transactions are excluded by
-    /// the manager's tracked-origin policy; `false` before a story is tracked.
+    /// Reverts the latest local-origin step and reports whether anything was
+    /// reverted. Remote and system transactions are excluded by the manager's
+    /// tracked-origin policy; `false` before tracking starts.
     pub fn undo(&self) -> bool {
         self.undo.undo()
     }
@@ -1960,14 +1947,9 @@ impl EditSession {
         self.undo.can_redo()
     }
 
-    /// Current local undo stack size. Zero before a story starts tracking.
-    pub fn undo_depth(&self) -> u32 {
-        self.undo.undo_depth() as u32
-    }
-
-    /// Current local redo stack size. Zero before a story starts tracking.
-    pub fn redo_depth(&self) -> u32 {
-        self.undo.redo_depth() as u32
+    /// Stories changed by the latest undo or redo, sorted.
+    pub fn history_stories(&self) -> Vec<String> {
+        self.undo.changed_stories()
     }
 
     /// Stores this peer's anchor and head as sticky positions, replacing any
@@ -2000,6 +1982,7 @@ impl EditSession {
             anchor,
             head,
         });
+        self.undo.select_story(story);
         Ok(())
     }
 

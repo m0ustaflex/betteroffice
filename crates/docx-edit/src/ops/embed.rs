@@ -309,7 +309,7 @@ mod tests {
     fn set_embed_attrs_is_one_undoable_step() {
         let doc = EditingDoc::new(7);
         let index = seed_sdt(&doc);
-        let mut undo = doc.undo_scope(&["body"]).unwrap();
+        let mut undo = doc.undo_manager();
         doc.set_embed_attrs(
             &ctx(),
             Position::new("body", index),
