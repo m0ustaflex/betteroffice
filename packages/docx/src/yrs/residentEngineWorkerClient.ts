@@ -46,8 +46,7 @@ type AwaitedRequest = Exclude<
   { type: 'applyUpdate' | 'eraseCaret' | 'destroy' }
 >;
 
-/** Per-kind reply budgets. The worker answers FIFO, so attachCanvases may sit
- * behind a sync and shares its budget; expiry is terminal. */
+/** attachCanvases queues behind a sync, so it shares that budget. */
 const REQUEST_TIMEOUT_MS: Record<AwaitedRequest['type'], number> = {
   bootstrap: 15_000,
   sync: 15_000,
@@ -57,7 +56,6 @@ const REQUEST_TIMEOUT_MS: Record<AwaitedRequest['type'], number> = {
   applyDelete: 5_000,
 };
 
-/** The worker surface the client drives; tests substitute a fake. */
 export interface ResidentEngineWorkerPort {
   onmessage: ((event: MessageEvent<ResidentEngineWorkerResponse>) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
@@ -77,7 +75,6 @@ function spawnResidentEngineWorker(): ResidentEngineWorkerPort {
 export class ResidentEngineWorkerClient {
   private readonly pending = new Map<number, PendingRequest>();
   private nextId = 1;
-  /** Set once the worker is gone for good; every later request rejects with it. */
   private terminalError: Error | null = null;
   private ready = false;
   private revision = 0;
@@ -296,7 +293,6 @@ export class ResidentEngineWorkerClient {
     this.appliedFontsRevision = fontsRevision;
   }
 
-  /** Tear the worker down and reject everything in flight or still to come. */
   private fail(error: Error): void {
     this.terminalError = error;
     this.ready = false;

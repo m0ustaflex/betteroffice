@@ -53,8 +53,6 @@ let paintedCaretPageId: string | null = null;
 let paintedCaretKey: string | null = null;
 let caretStage: OffscreenCanvas | null = null;
 const intactBackBuffers = new Set<string>();
-// A trap leaves the wasm instance in an unknown state, so every later request
-// is refused with the same terminal error instead of touching it again.
 let trap: WebAssembly.RuntimeError | null = null;
 
 scope.onmessage = (event: MessageEvent<ResidentEngineWorkerRequest>) => {
