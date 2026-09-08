@@ -697,7 +697,7 @@ function storedShape(value: unknown): Shape | undefined {
 
 function chartRunFromPayload(payload: Attrs): Run | null {
   const json = asString(payload.chartJson);
-  if (!json || json.length > 2_000_000) return null;
+  if (!json) return null;
   try {
     const chart = JSON.parse(json) as Chart;
     if (chart?.type !== 'chart' || typeof chart.chartType !== 'string') return null;
