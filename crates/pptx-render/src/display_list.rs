@@ -2,7 +2,7 @@ use ooxml_drawingml::GeometryPathCommand;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const CONTRACT_VERSION: u32 = 1;
+pub const CONTRACT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,6 +61,10 @@ pub enum ImageEffect {
         threshold: f32,
     },
     Grayscale,
+    Luminance {
+        brightness: f32,
+        contrast: f32,
+    },
     Duotone {
         shadow: String,
         highlight: String,
@@ -109,7 +113,7 @@ pub struct StrokeEnd {
     pub length: f32,
 }
 
-/// An `a:outerShdw`: a blurred copy of the shape's own path, offset and tinted.
+/// An `a:outerShdw`: a blurred copy of what the primitive paints, offset and tinted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Shadow {
@@ -224,6 +228,8 @@ pub enum Primitive {
         path: Option<Vec<GeometryPathCommand>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         stroke: Option<Stroke>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        shadow: Option<Shadow>,
         #[serde(default, skip_serializing_if = "Transform::is_identity")]
         transform: Transform,
     },
@@ -263,6 +269,22 @@ pub enum Primitive {
     /// A plotted chart: one addressable object whose parts paint clipped to
     /// its rectangle, and whose `label` is the screen-reader summary.
     Chart {
+        object_id: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        shape_id: Option<String>,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        label: String,
+        primitives: Vec<Primitive>,
+        #[serde(default, skip_serializing_if = "Transform::is_identity")]
+        transform: Transform,
+    },
+    /// A laid-out table: one addressable object whose cells paint clipped to
+    /// its rectangle, and whose `label` is the screen-reader summary.
+    Table {
         object_id: u32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         shape_id: Option<String>,
@@ -441,6 +463,7 @@ mod tests {
             crop: ImageCrop::default(),
             path: None,
             stroke: None,
+            shadow: None,
             transform: Transform::default(),
         };
         let before = r#"{"kind":"image","objectId":90,"shapeId":"slide:0:256:shape:9","name":"Media fixture","x":1280.0,"y":720.0,"w":0.5,"h":0.25,"assetId":"ppt/media/betteroffice-mark.png"}"#;
