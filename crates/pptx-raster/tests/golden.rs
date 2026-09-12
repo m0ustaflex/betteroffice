@@ -9,8 +9,8 @@ use ooxml_text::{FontId, FontStore};
 use pptx_raster::{AssetMap, Background, RenderOptions, RenderResources, render_slide};
 use pptx_render::{
     CONTRACT_VERSION, CaretStop, GradientStop, GradientType, ImageCrop, Paint, PositionedGlyph,
-    PositionedTextLine, PositionedTextRun, Primitive, Stroke, SurfaceDisplayList, TextAnchor,
-    TextParagraph, Transform,
+    PositionedTextLine, PositionedTextRun, Primitive, Shadow, Stroke, SurfaceDisplayList,
+    TextAnchor, TextParagraph, Transform,
 };
 
 const CARLITO: &[u8] = include_bytes!("assets/Carlito-Regular.ttf");
@@ -73,8 +73,31 @@ static CHECKER: LazyLock<Vec<u8>> = LazyLock::new(|| {
     bytes
 });
 
+/// An 8x8 bitmap opaque only in its middle 4x4, so a frame-shaped shadow and an
+/// alpha-shaped one cannot be confused.
+static HOLLOW: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    let mut pixels = vec![0u8; 8 * 8 * 4];
+    for y in 2..6 {
+        for x in 2..6 {
+            pixels[(y * 8 + x) * 4..(y * 8 + x) * 4 + 4].copy_from_slice(&[0x31, 0x5e, 0xfb, 0xff]);
+        }
+    }
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut bytes, 8, 8);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("png header");
+        writer.write_image_data(&pixels).expect("png data");
+    }
+    bytes
+});
+
 fn assets() -> AssetMap<'static> {
-    AssetMap::from([("ppt/media/image1.png", CHECKER.as_slice())])
+    AssetMap::from([
+        ("ppt/media/image1.png", CHECKER.as_slice()),
+        ("ppt/media/image2.png", HOLLOW.as_slice()),
+    ])
 }
 
 fn slide(primitives: Vec<Primitive>) -> SurfaceDisplayList {
@@ -314,6 +337,37 @@ fn golden_image() {
                 head_end: None,
                 tail_end: None,
             }),
+            shadow: None,
+            transform: Transform::default(),
+        }]),
+    );
+}
+
+#[test]
+fn golden_picture_shadow() {
+    check(
+        "picture-shadow",
+        &slide(vec![Primitive::Image {
+            object_id: 5,
+            shape_id: Some("pic-2".into()),
+            name: "hollow mark".into(),
+            x: 60.0,
+            y: 20.0,
+            w: 80.0,
+            h: 80.0,
+            asset_id: Some("ppt/media/image2.png".into()),
+            effects: Vec::new(),
+            crop: Default::default(),
+            path: None,
+            stroke: None,
+            shadow: Some(Shadow {
+                color: "#00000099".into(),
+                blur: 6.0,
+                dx: 12.0,
+                dy: 12.0,
+                scale_x: 1.0,
+                scale_y: 1.0,
+            }),
             transform: Transform::default(),
         }]),
     );
@@ -353,6 +407,7 @@ fn golden_picture_fill() {
                 Cmd::Close,
             ]),
             stroke: None,
+            shadow: None,
             transform: Transform::default(),
         }]),
     );
@@ -446,6 +501,221 @@ fn golden_chart() {
             ],
             transform: Transform::default(),
         }]),
+    );
+}
+
+/// A 2x2 table at (20, 20, 140x80): cell fills, cell borders, cell text, and a
+/// last child that reaches past the table rect so the clip is exercised.
+fn table_children() -> Vec<Primitive> {
+    let border = || {
+        Some(Stroke {
+            color: "#9aa7bd".into(),
+            width: 1.0,
+            dashed: false,
+            paint: None,
+            head_end: None,
+            tail_end: None,
+        })
+    };
+    let cells = [
+        (20.0, 20.0, "#1f3864"),
+        (90.0, 20.0, "#1f3864"),
+        (20.0, 60.0, "#e8eef7"),
+        (90.0, 60.0, "#ffffff"),
+    ];
+    let mut children: Vec<Primitive> = cells
+        .iter()
+        .map(|(x, y, color)| {
+            shape(
+                *x,
+                *y,
+                70.0,
+                40.0,
+                Some(Paint::Solid {
+                    color: (*color).into(),
+                }),
+                None,
+            )
+        })
+        .collect();
+    children.extend(
+        cells
+            .iter()
+            .map(|(x, y, _)| shape(*x, *y, 70.0, 40.0, None, border())),
+    );
+    children.push(text_box(26.0, 26.0, "Q1", 12.0, false));
+    children.push(text_box(96.0, 26.0, "Q2", 12.0, false));
+    children.push(text_box(26.0, 66.0, "12", 12.0, false));
+    children.push(text_box(96.0, 66.0, "34", 12.0, false));
+    children.push(shape(
+        130.0,
+        90.0,
+        90.0,
+        40.0,
+        Some(Paint::Solid {
+            color: "#ef4444".into(),
+        }),
+        None,
+    ));
+    children
+}
+
+fn table(primitives: Vec<Primitive>) -> Primitive {
+    Primitive::Table {
+        object_id: 6,
+        shape_id: Some("table-1".into()),
+        name: "table".into(),
+        x: 20.0,
+        y: 20.0,
+        w: 140.0,
+        h: 80.0,
+        label: "Table, 2 rows, 2 columns".into(),
+        primitives,
+        transform: Transform::default(),
+    }
+}
+
+fn render(list: &SurfaceDisplayList) -> Vec<u8> {
+    let (fonts, font) = font_store();
+    let images = assets();
+    let resources = RenderResources::new(&fonts, &images).with_label_font(Some(font));
+    render_slide(list, &resources, &RenderOptions::default())
+        .expect("render")
+        .bytes
+}
+
+#[test]
+fn golden_table() {
+    check("table", &slide(vec![table(table_children())]));
+}
+
+#[test]
+fn a_table_paints_exactly_as_the_chart_container_does() {
+    let Primitive::Table {
+        object_id,
+        shape_id,
+        name,
+        x,
+        y,
+        w,
+        h,
+        label,
+        primitives,
+        transform,
+    } = table(table_children())
+    else {
+        unreachable!()
+    };
+    let as_chart = Primitive::Chart {
+        object_id,
+        shape_id,
+        name,
+        x,
+        y,
+        w,
+        h,
+        label,
+        primitives: primitives.clone(),
+        transform,
+    };
+    assert_eq!(
+        render(&slide(vec![table(primitives)])),
+        render(&slide(vec![as_chart]))
+    );
+}
+
+#[test]
+fn a_table_clips_its_children_to_its_rectangle() {
+    let rendered = render(&slide(vec![table(table_children())]));
+    let pixels = image::load_from_memory(&rendered).unwrap().to_rgba8();
+    let mut painted = 0;
+    for (x, y, pixel) in pixels.enumerate_pixels() {
+        if pixel.0 == [253, 253, 253, 255] {
+            continue;
+        }
+        painted += 1;
+        assert!(
+            (20..160).contains(&x) && (20..100).contains(&y),
+            "a table child painted at ({x}, {y}), outside the table rect"
+        );
+    }
+    assert!(painted > 0);
+}
+
+#[test]
+fn an_empty_table_paints_nothing() {
+    assert_eq!(
+        render(&slide(vec![table(Vec::new())])),
+        render(&slide(vec![]))
+    );
+}
+
+fn rotated(primitive: Primitive, rotation_deg: f32) -> Primitive {
+    let Primitive::Table {
+        object_id,
+        shape_id,
+        name,
+        x,
+        y,
+        w,
+        h,
+        label,
+        primitives,
+        ..
+    } = primitive
+    else {
+        unreachable!()
+    };
+    Primitive::Table {
+        object_id,
+        shape_id,
+        name,
+        x,
+        y,
+        w,
+        h,
+        label,
+        primitives,
+        transform: Transform {
+            rotation_deg,
+            ..Transform::default()
+        },
+    }
+}
+
+#[test]
+fn a_table_turns_its_cells_and_its_clip_under_its_own_transform() {
+    let turned = render(&slide(vec![rotated(table(table_children()), 30.0)]));
+    assert_ne!(turned, render(&slide(vec![table(table_children())])));
+    let Primitive::Table {
+        object_id,
+        shape_id,
+        name,
+        x,
+        y,
+        w,
+        h,
+        label,
+        primitives,
+        transform,
+    } = rotated(table(table_children()), 30.0)
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        turned,
+        render(&slide(vec![Primitive::Chart {
+            object_id,
+            shape_id,
+            name,
+            x,
+            y,
+            w,
+            h,
+            label,
+            primitives,
+            transform,
+        }]))
     );
 }
 
