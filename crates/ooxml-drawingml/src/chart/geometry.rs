@@ -13,7 +13,9 @@ pub const CHART_TEXT_COLOR: &str = "#222222";
 pub const CHART_BACKGROUND_COLOR: &str = "#FFFFFF";
 const EMU_PER_PIXEL: f64 = 9525.0;
 /// Keeps a nonsense `a:ln/@w` from drawing a rule across the whole chart.
-const MAX_AXIS_LINE_PX: f64 = 16.0;
+const MAX_LINE_PX: f64 = 16.0;
+/// The width a series line is drawn at when its `c:spPr` declares none.
+const DEFAULT_SERIES_LINE_PX: f64 = 2.0;
 pub const CHART_SERIES_COLORS: [&str; 8] = [
     "#4472C4", "#ED7D31", "#A5A5A5", "#FFC000", "#5B9BD5", "#70AD47", "#264478", "#9E480E",
 ];
@@ -29,6 +31,7 @@ pub fn chart_label_font() -> PlotFont {
         size_px: CHART_LABEL_SIZE_PX,
         family: CHART_FONT_FAMILY.to_owned(),
         italic: false,
+        letter_spacing_px: 0.0,
     }
 }
 
@@ -39,6 +42,7 @@ pub fn chart_title_font() -> PlotFont {
         size_px: CHART_TITLE_SIZE_PX,
         family: CHART_FONT_FAMILY.to_owned(),
         italic: false,
+        letter_spacing_px: 0.0,
     }
 }
 
@@ -82,6 +86,8 @@ pub struct PlotFont {
     pub size_px: f64,
     pub family: String,
     pub italic: bool,
+    /// `a:defRPr/@spc` in pixels, added after every cluster.
+    pub letter_spacing_px: f64,
 }
 
 impl PlotFont {
@@ -100,6 +106,7 @@ pub struct PlotTextStyle<'a> {
     pub bold: Option<bool>,
     pub italic: Option<bool>,
     pub color: Option<&'a str>,
+    pub spacing_pt: Option<f64>,
 }
 
 impl<'a> PlotTextStyle<'a> {
@@ -111,6 +118,7 @@ impl<'a> PlotTextStyle<'a> {
             bold: self.bold.or(base.bold),
             italic: self.italic.or(base.italic),
             color: self.color.or(base.color),
+            spacing_pt: self.spacing_pt.or(base.spacing_pt),
         }
     }
 
@@ -134,6 +142,11 @@ impl<'a> PlotTextStyle<'a> {
                     .map(str::to_owned)
                     .unwrap_or_else(|| CHART_FONT_FAMILY.to_owned()),
                 italic: self.italic.unwrap_or(false),
+                letter_spacing_px: self
+                    .spacing_pt
+                    .filter(|spacing| spacing.is_finite())
+                    .map(|spacing| (spacing * 4.0 / 3.0).clamp(-400.0, 400.0))
+                    .unwrap_or(0.0),
             },
             color: self
                 .color
@@ -383,6 +396,8 @@ pub struct PlotSeries<'a> {
     pub smooth: bool,
     /// This series' `c:dLbls`, already merged over its plot group's.
     pub labels: Option<PlotDataLabels<'a>>,
+    /// This series' own `c:spPr/a:ln`.
+    pub line: Option<PlotLine<'a>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -592,6 +607,7 @@ fn plot_text_from_model(text: Option<&super::model::ChartTextProperties>) -> Plo
         bold: text.bold,
         italic: text.italic,
         color: text.color.as_deref(),
+        spacing_pt: text.spacing_pt,
     })
     .unwrap_or_default()
 }
@@ -660,6 +676,11 @@ fn plot_series_from_model<'a>(
         bubble_sizes: series.bubble_sizes.as_deref().unwrap_or_default(),
         smooth: series.smooth.unwrap_or(false),
         labels,
+        line: series.line.as_ref().map(|line| PlotLine {
+            none: line.none,
+            color: line.color.as_deref(),
+            width_emu: line.width_emu,
+        }),
     }
 }
 
@@ -1714,7 +1735,14 @@ fn legend_text_width<S: PlotSink + ?Sized>(
     ops.sink
         .measure_text(label, &style.font)
         .filter(|width| width.is_finite() && *width >= 0.0)
-        .unwrap_or_else(|| label.chars().count() as f64 * style.font.size_px * 0.5)
+        .unwrap_or_else(|| fallback_label_width(label, &style.font))
+}
+
+/// A label's width when the sink cannot measure text: n - 1 tracked gaps, as a
+/// measured line has, and never below zero.
+fn fallback_label_width(label: &str, font: &PlotFont) -> f64 {
+    let count = label.chars().count() as f64;
+    (count * font.size_px * 0.5 + (count - 1.0).max(0.0) * font.letter_spacing_px).max(0.0)
 }
 
 fn wrap_legend_label<S: PlotSink + ?Sized>(
@@ -2115,10 +2143,26 @@ fn axis_stroke<'a>(axis: Option<&'a PlotAxis<'a>>) -> Option<(&'a str, f64)> {
 
 /// `a:ln/@w` as device pixels at the 96 DPI the plot geometry works in, never
 /// below the hairline a rasteriser would round it up to anyway.
-fn axis_line_width(width_emu: Option<f64>) -> f64 {
+fn line_width(width_emu: Option<f64>, default_px: f64) -> f64 {
     match width_emu {
-        Some(emu) if emu.is_finite() => (emu / EMU_PER_PIXEL).clamp(1.0, MAX_AXIS_LINE_PX),
-        _ => 1.0,
+        Some(emu) if emu.is_finite() => (emu / EMU_PER_PIXEL).clamp(1.0, MAX_LINE_PX),
+        _ => default_px,
+    }
+}
+
+fn axis_line_width(width_emu: Option<f64>) -> f64 {
+    line_width(width_emu, 1.0)
+}
+
+/// The width a series' own line is drawn at, or `None` when its `c:spPr/a:ln`
+/// is `a:noFill`.
+fn series_line_width(series: &PlotSeries<'_>) -> Option<f64> {
+    match series.line {
+        Some(line) if line.none => None,
+        line => Some(line_width(
+            line.and_then(|line| line.width_emu),
+            DEFAULT_SERIES_LINE_PX,
+        )),
     }
 }
 
@@ -2669,6 +2713,7 @@ fn emit_line<S: PlotSink + ?Sized>(
     let spans = &mut Vec::with_capacity(family.series.len());
     for (ser_idx, series) in family.series.iter().enumerate() {
         let color = series_color(Some(series.series), ser_idx);
+        let width = series_line_width(series.series);
         let markers = family.group.and_then(|group| group.markers) != Some(false);
         let mut prev: Option<(f64, f64)> = None;
         for i in 0..cat_count {
@@ -2683,8 +2728,8 @@ fn emit_line<S: PlotSink + ?Sized>(
             };
             let x = line_x(family, plot, i, cat_count);
             let y = scale.y(plot, value);
-            if let Some((prev_x, prev_y)) = prev {
-                push_line(ops, prev_x, prev_y, x, y, &color, 2.0);
+            if let (Some(width), Some((prev_x, prev_y))) = (width, prev) {
+                push_line(ops, prev_x, prev_y, x, y, &color, width);
             }
             if markers {
                 push_marker(
@@ -2905,6 +2950,7 @@ fn emit_scatter<S: PlotSink + ?Sized>(
     let (lines, markers) = scatter_parts(family.group.and_then(|group| group.scatter_style));
     for (ser_idx, series) in family.series.iter().enumerate() {
         let color = series_color(Some(series.series), ser_idx);
+        let width = series_line_width(series.series);
         let mut prev: Option<(f64, f64)> = None;
         for i in 0..series.length().min(MAX_PLOT_DATA_SCAN) {
             if ops.exhausted() {
@@ -2916,8 +2962,8 @@ fn emit_scatter<S: PlotSink + ?Sized>(
             };
             let x = x_scale.x(plot, x_value);
             let y = y_scale.y(plot, y_value);
-            if lines && let Some((prev_x, prev_y)) = prev {
-                push_line(ops, prev_x, prev_y, x, y, &color, 2.0);
+            if lines && let (Some(width), Some((prev_x, prev_y))) = (width, prev) {
+                push_line(ops, prev_x, prev_y, x, y, &color, width);
             }
             if markers {
                 push_marker(
@@ -3093,12 +3139,12 @@ fn emit_radar<S: PlotSink + ?Sized>(
             commands.push(GeometryPathCommand::Close);
             push_path(ops, plot, commands, &color, None);
         }
-        if !filled {
+        if !filled && let Some(width) = series_line_width(series.series) {
             for (from, to) in ring_edges(&ring) {
                 if ops.exhausted() {
                     return;
                 }
-                push_line(ops, from.0, from.1, to.0, to.1, &color, 2.0);
+                push_line(ops, from.0, from.1, to.0, to.1, &color, width);
             }
         }
         for (index, (x, y)) in ring.iter().enumerate() {
@@ -3865,6 +3911,21 @@ mod tests {
         ChartDataLabels, ChartPlotGroup, ChartPointLabel, ChartSeries, ChartTextProperties,
     };
 
+    #[test]
+    fn an_unmeasured_legend_label_is_never_negative_and_counts_gaps_between() {
+        let font = |spacing: f64| PlotFont {
+            weight: 400,
+            size_px: 12.0,
+            family: "Arial".to_owned(),
+            italic: false,
+            letter_spacing_px: spacing,
+        };
+        assert!(fallback_label_width("Series", &font(-40.0)) >= 0.0);
+        let loose = fallback_label_width("Series", &font(2.0));
+        let plain = fallback_label_width("Series", &font(0.0));
+        assert!((loose - plain - 10.0).abs() < 1e-9, "{loose} vs {plain}");
+    }
+
     struct Source {
         categories: Vec<String>,
         values: Vec<f64>,
@@ -3980,6 +4041,7 @@ mod tests {
                 bold: Some(true),
                 italic: Some(true),
                 color: Some("FF0000"),
+                spacing_pt: None,
             }
             .resolve(CHART_LABEL_SIZE_PX, 400)
             .font
@@ -5715,7 +5777,78 @@ mod tests {
         assert_eq!(axis_line_width(Some(3175.0)), 1.0);
         assert_eq!(axis_line_width(Some(38100.0)), 4.0);
         assert_eq!(axis_line_width(Some(f64::INFINITY)), 1.0);
-        assert_eq!(axis_line_width(Some(1e30)), MAX_AXIS_LINE_PX);
+        assert_eq!(axis_line_width(Some(1e30)), MAX_LINE_PX);
+    }
+
+    #[test]
+    fn a_series_line_takes_its_width_from_its_own_sp_pr() {
+        let data = source(&[1.0, 2.0]);
+        let widths = |line| {
+            let mut north = series("North", &data);
+            north.line = line;
+            plot_chart(&grouped("line", group("line", vec![north])), rect())
+                .iter()
+                .filter_map(|op| match op {
+                    PlotOp::Line { color, width, .. } if color == CHART_SERIES_COLORS[0] => {
+                        Some(*width)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(widths(None), [DEFAULT_SERIES_LINE_PX]);
+        assert_eq!(
+            widths(Some(PlotLine {
+                width_emu: Some(41275.0),
+                ..PlotLine::default()
+            })),
+            [41275.0 / EMU_PER_PIXEL]
+        );
+        assert!(
+            widths(Some(PlotLine {
+                none: true,
+                width_emu: Some(41275.0),
+                ..PlotLine::default()
+            }))
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_series_line_width_stays_between_a_hairline_and_the_cap() {
+        let width = |line| {
+            series_line_width(&PlotSeries {
+                line,
+                ..PlotSeries::default()
+            })
+        };
+        assert_eq!(width(None), Some(DEFAULT_SERIES_LINE_PX));
+        assert_eq!(
+            width(Some(PlotLine::default())),
+            Some(DEFAULT_SERIES_LINE_PX)
+        );
+        assert_eq!(
+            width(Some(PlotLine {
+                width_emu: Some(3175.0),
+                ..PlotLine::default()
+            })),
+            Some(1.0)
+        );
+        assert_eq!(
+            width(Some(PlotLine {
+                width_emu: Some(1e30),
+                ..PlotLine::default()
+            })),
+            Some(MAX_LINE_PX)
+        );
+        assert_eq!(
+            width(Some(PlotLine {
+                width_emu: Some(f64::NAN),
+                ..PlotLine::default()
+            })),
+            Some(DEFAULT_SERIES_LINE_PX)
+        );
     }
 
     #[test]
@@ -6321,6 +6454,30 @@ mod tests {
         let labels = texts(&plot_chart(&PlotChart::from(&space), rect()));
         assert!(labels.contains(&"3".to_owned()));
         assert!(!labels.contains(&"1".to_owned()));
+    }
+
+    #[test]
+    fn chart_scope_tracking_reaches_every_text_op_and_a_scope_overrides_it() {
+        let mut space = model_space("column", None, vec![model_series("North", &[3.0, 1.0])]);
+        space.title = Some("Revenue".to_owned());
+        space.text = Some(ChartTextProperties {
+            spacing_pt: Some(1.5),
+            ..ChartTextProperties::default()
+        });
+        space.title_text = Some(ChartTextProperties {
+            spacing_pt: Some(-0.75),
+            ..ChartTextProperties::default()
+        });
+        let ops = plot_chart(&PlotChart::from(&space), rect());
+        let spacing = |label: &str| {
+            ops.iter().find_map(|op| match op {
+                PlotOp::Text { text, font, .. } if text == label => Some(font.letter_spacing_px),
+                _ => None,
+            })
+        };
+        assert_eq!(spacing("Revenue"), Some(-1.0));
+        assert_eq!(spacing("Q1"), Some(2.0));
+        assert_eq!(chart_label_font().letter_spacing_px, 0.0);
     }
 
     #[test]

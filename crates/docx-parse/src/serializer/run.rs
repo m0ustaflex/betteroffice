@@ -468,7 +468,7 @@ pub fn serialize_shape_content(
     shape: &Shape,
     context: &mut SerializerContext,
 ) -> Result<String, ParseError> {
-    let is_text_box = shape.shape_type == "textBox";
+    let is_text_box = shape.text_box.unwrap_or(shape.shape_type == "textBox");
     let floating = shape
         .wrap
         .as_ref()
@@ -509,7 +509,7 @@ pub fn serialize_shape_content(
         .start_element("a:prstGeom")
         .attribute(
             "prst",
-            if is_text_box {
+            if shape.shape_type == "textBox" {
                 "rect"
             } else {
                 &shape.shape_type
@@ -552,7 +552,7 @@ pub fn serialize_shape_content(
         }
         write_auto_fit(&mut body_properties, shape);
         body_properties.end_element();
-        if is_text_box {
+        if is_text_box || !text_body.content.is_empty() {
             graphic
                 .start_element("wps:txbx")
                 .start_element("w:txbxContent");

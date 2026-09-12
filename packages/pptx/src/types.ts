@@ -70,6 +70,7 @@ export interface ShapeOutline {
 export type BlipEffect =
   | { type: 'biLevel'; threshold: number }
   | { type: 'grayscale' }
+  | { type: 'luminance'; brightness: number; contrast: number }
   | { type: 'duotone'; shadow: ColorValue | null; highlight: ColorValue | null }
   | { type: 'colorChange'; from: ColorValue | null; to: ColorValue | null; useAlpha?: boolean };
 
@@ -309,6 +310,7 @@ export interface ShapePrimitive extends PrimitiveBase {
 export type ImageEffect =
   | { kind: 'biLevel'; threshold: number }
   | { kind: 'grayscale' }
+  | { kind: 'luminance'; brightness: number; contrast: number }
   | { kind: 'duotone'; shadow: string; highlight: string }
   | { kind: 'colorChange'; from: string; to: string; useAlpha?: boolean };
 export interface ImageCrop {
@@ -329,6 +331,7 @@ export interface ImagePrimitive extends PrimitiveBase {
   /** Outline the picture is masked to, when its `spPr` gives it one. */
   path?: GeometryPathCommand[];
   stroke?: Stroke;
+  shadow?: Shadow;
 }
 
 export interface CaretStop {
@@ -411,12 +414,22 @@ export interface ChartPrimitive extends PrimitiveBase {
   primitives: SlidePrimitive[];
 }
 
+/** A laid-out table. Its cells paint clipped to the table rectangle, and
+ *  `label` is the screen-reader summary of the whole table. */
+export interface TablePrimitive extends PrimitiveBase {
+  kind: 'table';
+  name: string;
+  label: string;
+  primitives: SlidePrimitive[];
+}
+
 export type SlidePrimitive =
   | ShapePrimitive
   | ImagePrimitive
   | TextBoxPrimitive
   | PlaceholderPrimitive
-  | ChartPrimitive;
+  | ChartPrimitive
+  | TablePrimitive;
 
 export interface SlideDisplayList {
   contractVersion: number;
